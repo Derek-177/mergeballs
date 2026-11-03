@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Merge Ball</title>
+<style>
+:root{--bg:#000;--ink:#fff;--panel:#0d0d12;--line:#2a2a36;--accent:#18f0e6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);overflow:hidden;font:14px system-ui,sans-serif}
+body{display:flex;justify-content:center;align-items:center}
+canvas{display:block;touch-action:manipulation}
+#gear{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);right:10px;z-index:3;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:20px;cursor:pointer}
+#panel{position:fixed;top:0;right:0;bottom:0;width:min(360px,100vw);z-index:2;background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:calc(env(safe-area-inset-top,0px) + 62px) 14px calc(env(safe-area-inset-bottom,0px) + 20px);transform:translateX(100%);transition:transform .2s}
+#panel.open{transform:none}
+h2{font-size:15px;margin:18px 0 8px;font-weight:600}
+h2:first-child{margin-top:0}
+.row{border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:8px;display:grid;gap:8px}
+.line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.thumb{width:34px;height:34px;border-radius:50%;flex:none;border:2px solid var(--line)}
+input,select,textarea,button{font:inherit;color:var(--ink);background:#181822;border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+input[type=color]{padding:0;width:34px;height:28px}
+input.nm{flex:1;min-width:0}
+input.num{width:64px}
+textarea{width:100%;min-height:90px;resize:vertical}
+button{cursor:pointer}
+button:hover,#gear:hover{border-color:var(--accent)}
+button:disabled{opacity:.4;cursor:default}
+.eq{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.eq select{flex:1;min-width:0}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+label{display:flex;align-items:center;gap:4px}
+.hint{color:#9a9aab;font-size:12px;margin:6px 0 0;line-height:1.4}
+input[type=range]{flex:1;min-width:0;padding:0;accent-color:var(--accent)}
+#recFloat{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:10px;z-index:4;display:none;border-color:#ff3b3b;background:#2a0d0d;font-weight:600}
+#recFloat.on{display:block}
+#recFloat i{display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff3b3b;margin-right:6px;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+.sel{display:grid;grid-template-columns:70px minmax(0,1fr);gap:8px;align-items:center;margin-bottom:8px}
+.sel select{min-width:0;width:100%;text-overflow:ellipsis}
+#recLink a{color:var(--accent)}
+.aud{display:grid;grid-template-columns:56px 1fr auto;gap:8px;align-items:center;margin-bottom:8px}
+.aud output{min-width:48px;text-align:right;color:#9a9aab}
+#audName{word-break:break-all}
+.snm{flex:1;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9a9aab}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Merge ball simulation"></canvas>
+<button id="recFloat" aria-label="Stop recording"><i></i><span id="recTime">0:00</span> &middot; Stop</button>
+<button id="gear" aria-label="Settings">⚙</button>
+<aside id="panel">
+<h2>Balls</h2>
+<div id="balls"></div>
+<div class="bar"><button id="addType">Add ball</button></div>
+<h2>Dropping</h2>
+<div class="aud"><span>Rate</span><input type="range" id="dropRate" min="0.2" max="5" step="any" value="0.667" aria-label="Balls dropped per second"><output id="dropRateVal">0.67/s</output></div>
+<div class="aud"><span>Speed</span><input type="range" id="dropSpeed" min="0.25" max="3" step="any" value="1" aria-label="Ball drop speed"><output id="dropSpeedVal">1.00&times;</output></div>
+<p class="hint">Rate = balls dropped per second. Speed = how fast each ball is launched out of the pipe.</p>
+<h2>Collision products</h2>
+<label><input type="checkbox" id="chain"> Same ball + same ball makes the next ball</label>
+<div id="eqs" style="margin-top:10px"></div>
+<div class="bar"><button id="addEq">Add equation</button></div>
+<h2>Equations as text</h2>
+<textarea id="txt" spellcheck="false"></textarea>
+<div class="bar"><button id="applyTxt">Apply text</button></div>
+<p class="hint">One per line: Ball 1 + Ball 3 = Ball 5. Use ball names or numbers. Write none on the right side to stop two balls from merging. The last ball is the final form.</p>
+<div class="bar"><button id="restart">Restart</button><button id="defaults">Restore defaults</button></div>
+<h2>Merge sound (all balls)</h2>
+<label><input type="checkbox" id="audEnabled" checked> Play a sound on every merge</label>
+<div class="aud" style="margin-top:10px"><span>Volume</span><input type="range" id="audVolume" min="0" max="100" step="1" value="80" aria-label="Merge sound volume"><output id="audVolVal">80%</output></div>
+<div class="aud"><span>Pitch</span><input type="range" id="audPitch" min="0.5" max="2" step="0.05" value="1" aria-label="Merge sound pitch and speed"><output id="audPitchVal">1.00&times;</output></div>
+<div class="line" style="margin-top:6px">All merges: <strong id="audName">Default sound</strong></div>
+<div class="bar"><button id="audUpload">Upload audio</button><button id="audRemove" disabled>Remove custom</button><button id="audPreview">Preview</button><button id="audRestore">Restore default audio</button></div>
+<input type="file" id="audFile" accept=".mp3,.wav,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/ogg" hidden>
+<p class="hint" id="audStatus">MP3, WAV or OGG. Sound starts after your first tap or click.</p>
+<p class="hint">Want a different sound for each new ball? Use the <b>Sound</b> button on a ball in the list above: it plays when a merge creates that ball. Balls without their own sound use the one here.</p>
+<h2>Record video (YouTube Shorts)</h2>
+<div class="sel"><span>Size</span><select id="recRes"><option value="1080">1080 &times; 1920 (best)</option><option value="720">720 &times; 1280 (lighter)</option></select></div>
+<div class="sel"><span>Format</span><select id="recFmt"></select></div>
+<div class="sel"><span>Frames</span><select id="recFps"><option value="30">30 fps (stable)</option><option value="60">60 fps (smoothest)</option></select></div>
+<div class="aud"><span>Sound</span><input type="range" id="recDelay" min="0" max="500" step="10" value="0" aria-label="Delay the sound in the recorded video"><output id="recDelayVal">0 ms</output></div>
+<p class="hint">If the sound comes too early in your saved video, raise the Sound delay a little (try 100&ndash;200 ms) and record again.</p>
+<div class="bar"><button id="recStart">&#9679; Start recording</button></div>
+<p class="hint" id="recStatus">Records the game in vertical 9:16 with the merge sounds. The panel closes while recording; tap the red button to stop and save. Max 3 minutes (Shorts limit).</p>
+<p class="hint" id="recLink"></p>
+</aside>
+<script src="audio.js"></script>
+<script src="recorder.js"></script>
+<script>
+(function(){
+const cv=document.getElementById('c');let ctx=cv.getContext('2d');
+const LW=360,LH=640;
+const CX=180,CY=215,R=108,HW=24,TOP=18;
+const OPEN_Y=CY-Math.sqrt(R*R-HW*HW);
+const DEF_R=[7,12,17,23,30,38,48,62];
+const DEF_C=['#4aa8ff','#25d366','#1877f2','#6c7bff','#9146ff','#ff3d7f','#18f0e6','#ff1a1a'];
+const KEY='mergeball.cfg.v1';
+const IMG_S=R/348.5,IMG_X=CX-510.5*IMG_S,IMG_Y=CY-826.5*IMG_S;
+let boxImg=null;
+(function(){const im=new Image();im.onload=function(){boxImg=im;};im.src='assets/container.jpg';})();
+let scale=1,dpr=1;
+function resize(){
+  dpr=window.devicePixelRatio||1;
+  const w=Math.min(window.innerWidth,window.innerHeight*LW/LH);
+  const h=w*LH/LW;
+  cv.style.width=w+'px';cv.style.height=h+'px';
+  cv.width=w*dpr;cv.height=h*dpr;
+  scale=w/LW;
+}
+window.addEventListener('resize',resize);resize();
+
+let types=[],recipes=[],chain=true;
+let dropRate=1/1.5,dropSpeed=1;
+let recCtx=null,recW=0;
+window.__mbSetRecTarget=function(c){recCtx=c?c.getContext('2d'):null;recW=c?c.width:0;};
+let balls=[],pend=[],pulses=[],spawnT=0,t=0,won=0,stuck=0;
+
+function defType(i){return{name:'Ball '+(i+1),r:DEF_R[i],color:DEF_C[i],gl:i,spawn:i===0,src:null,img:null,snd:null};}
+function setImage(ty,src){
+  ty.img=null;ty.src=src||null;
+  if(!src)return;
+  const im=new Image();
+  im.onload=function(){ty.img=im;};
+  im.src=src;
+}
+// Per-ball merge sounds: {key,name,buf}. The audio itself is kept in IndexedDB (key) so it survives reloads.
+function loadBallSound(ty,info){
+  if(!info||!info.key||!window.MergeAudio)return;
+  const snd={key:info.key,name:String(info.name||'sound'),buf:null};
+  ty.snd=snd;
+  MergeAudio.soundStore.get(snd.key).then(function(rec){
+    if(!rec||!rec.blob)throw 0;
+    return MergeAudio.decodeBlob(rec.blob);
+  }).then(function(buf){snd.buf=buf;},function(){if(ty.snd===snd){ty.snd=null;save();if(typeof renderBalls==='function')renderBalls();}});
+}
+function setBallSound(ty,file){
+  if(!window.MergeAudio)return Promise.reject(new Error('Audio is unavailable in this browser.'));
+  return MergeAudio.decodeFile(file).then(function(r){
+    const old=ty.snd;
+    const key=old?old.key:'b'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+    ty.snd={key:key,name:file.name,buf:r.buf};
+    MergeAudio.soundStore.put(key,file,file.name);
+    save();
+  });
+}
+function clearBallSound(ty){
+  if(ty.snd&&window.MergeAudio)MergeAudio.soundStore.del(ty.snd.key);
+  ty.snd=null;save();
+}
+function init(){
+  dropRate=1/1.5;dropSpeed=1;
+  let saved=null;
+  try{saved=JSON.parse(localStorage.getItem(KEY)||'null');}catch(e){}
+  if(saved&&Array.isArray(saved.types)&&saved.types.length>1){
+    types=saved.types.map(function(s){
+      const ty={name:String(s.name),r:+s.r||20,color:s.color||'#ffffff',gl:typeof s.gl==='number'?s.gl:-1,spawn:!!s.spawn,src:null,img:null,snd:null};
+      setImage(ty,s.src);
+      loadBallSound(ty,s.snd);
+      return ty;
+    });
+    const n=types.length;
+    recipes=(Array.isArray(saved.recipes)?saved.recipes:[]).filter(function(q){return q.a>=0&&q.a<n&&q.b>=0&&q.b<n&&q.c>=-1&&q.c<n;});
+    chain=saved.chain!==false;
+    if(+saved.rate>=0.1&&+saved.rate<=5)dropRate=+saved.rate;
+    if(+saved.speed>=0.25&&+saved.speed<=4)dropSpeed=+saved.speed;
+  }else{
+    types=DEF_R.map(function(_,i){return defType(i);});
+    recipes=[];chain=true;
+  }
+}
+function save(){
+  try{
+    localStorage.setItem(KEY,JSON.stringify({
+      types:types.map(function(x){return{name:x.name,r:x.r,color:x.color,gl:x.gl,spawn:x.spawn,src:x.src,snd:x.snd?{key:x.snd.key,name:x.snd.name}:null};}),
+      recipes:recipes,chain:chain,rate:dropRate,speed:dropSpeed
+    }));
+  }catch(e){}
+}
+
+function result(a,b){
+  for(const q of recipes)if((q.a===a&&q.b===b)||(q.a===b&&q.b===a))return q.c;
+  if(chain&&a===b&&a<types.length-1)return a+1;
+  return -1;
+}
+
+function mk(x,y,vx,vy,tier){return{x:x,y:y,vx:vx,vy:vy,tier:tier,r:types[tier].r,dead:false,age:0};}
+function reset(){balls=[];pend=[];pulses=[];spawnT=0;won=0;stuck=0;}
+
+function spawn(){
+  const pool=[];
+  types.forEach(function(x,i){if(x.spawn)pool.push(i);});
+  const tier=pool.length?pool[Math.floor(Math.random()*pool.length)]:0;
+  balls.push(mk(CX+(Math.random()-0.5)*14,TOP+4,(Math.random()-0.5)*20,(15+Math.random()*10)*dropSpeed,tier));
+}
+
+function integrate(b,dt){
+  b.vy+=(b.y<OPEN_Y?25*dropSpeed:240)*dt;
+  const k=Math.exp(-0.03*dt);
+  b.vx*=k;b.vy*=k;
+  b.x+=b.vx*dt;b.y+=b.vy*dt;
+  const r=b.r;
+  if(b.y>OPEN_Y){
+    const dx=b.x-CX,dy=b.y-CY,d=Math.hypot(dx,dy)||1;
+    if(d>R-r){
+      const nx=dx/d,ny=dy/d;
+      b.x=CX+nx*(R-r);b.y=CY+ny*(R-r);
+      const vn=b.vx*nx+b.vy*ny;
+      if(vn>0){b.vx-=1.95*vn*nx;b.vy-=1.95*vn*ny;}
+      const sp=Math.hypot(b.vx,b.vy);
+      if(sp<90){const a=Math.random()*Math.PI*2;b.vx+=Math.cos(a)*40;b.vy+=Math.sin(a)*40;}
+    }
+  }else{
+    const half=Math.max(HW-r,0);
+    if(b.x<CX-half){b.x=CX-half;b.vx=Math.abs(b.vx)*0.3;}
+    if(b.x>CX+half){b.x=CX+half;b.vx=-Math.abs(b.vx)*0.3;}
+  }
+}
+
+function collide(a,b){
+  if(a.dead||b.dead)return;
+  const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),m=a.r+b.r;
+  if(d<m+1){
+    const c=result(a.tier,b.tier);
+    if(c>=0){a.dead=b.dead=true;pend.push([a,b,c]);return;}
+  }
+  if(d===0||d>=m)return;
+  const nx=dx/d,ny=dy/d,ov=(m-d);
+  const ma=a.r*a.r,mb=b.r*b.r,s=ma+mb;
+  a.x-=nx*ov*mb/s;a.y-=ny*ov*mb/s;
+  b.x+=nx*ov*ma/s;b.y+=ny*ov*ma/s;
+  const rv=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;
+  if(rv<0){
+    const j=-(1.9)*rv/(1/ma+1/mb);
+    a.vx-=j*nx/ma;a.vy-=j*ny/ma;b.vx+=j*nx/mb;b.vy+=j*ny/mb;
+  }
+}
+
+function flush(){
+  if(!pend.length)return;
+  const add=[];
+  for(const [a,b,c] of pend){
+    const n=mk((a.x+b.x)/2,(a.y+b.y)/2,(a.vx+b.vx)/2,(a.vy+b.vy)/2,c);
+    add.push(n);
+    pulses.push({x:n.x,y:n.y,r:n.r,t:0,c:types[c].color});
+    try{if(window.MergeAudio)window.MergeAudio.playMerge(types[c].snd&&types[c].snd.buf);}catch(e){}
+    if(c===types.length-1&&!won)won=t;
+  }
+  pend=[];
+  balls=balls.filter(function(b){return !b.dead;}).concat(add);
+}
+
+function update(dt){
+  t+=dt;
+  spawnT-=dt;
+  if(spawnT<=0&&!won){spawn();spawnT=1/dropRate;}
+  for(const b of balls)b.r=types[b.tier].r;
+  const sub=4;
+  for(let s=0;s<sub;s++){
+    for(const b of balls)integrate(b,dt/sub);
+    for(let it=0;it<2;it++)
+      for(let i=0;i<balls.length;i++)for(let j=i+1;j<balls.length;j++)collide(balls[i],balls[j]);
+  }
+  flush();
+  for(const p of pulses)p.t+=dt;
+  pulses=pulses.filter(function(p){return p.t<0.8;});
+  let full=false;
+  for(const b of balls){
+    b.age+=dt;
+    if(b.y<OPEN_Y-60&&b.age>1.5&&Math.hypot(b.vx,b.vy)<25)full=true;
+  }
+  stuck=full?stuck+dt:0;
+  if(stuck>2||(won&&t-won>4))reset();
+}
+
+function glyph(b){
+  const ty=types[b.tier],r=b.r,k=ty.gl,c=ty.color;
+  ctx.save();ctx.translate(b.x,b.y);
+  ctx.shadowColor=c;ctx.shadowBlur=r*0.8;
+  if(ty.img){
+    ctx.fillStyle=c;
+    ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.save();
+    ctx.beginPath();ctx.arc(0,0,r-1,0,Math.PI*2);ctx.clip();
+    ctx.drawImage(ty.img,-r,-r,r*2,r*2);
+    ctx.restore();
+    ctx.strokeStyle=c;ctx.lineWidth=Math.max(1.5,r*0.1);
+    ctx.beginPath();ctx.arc(0,0,r-0.5,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  const g=ctx.createRadialGradient(-r*0.3,-r*0.3,r*0.1,0,0,r);
+  g.addColorStop(0,'#fff');g.addColorStop(0.25,c);g.addColorStop(1,c);
+  if(k===7){
+    ctx.fillStyle=c;
+    const w=r*1.9,h=r*1.35;
+    ctx.beginPath();ctx.roundRect(-w/2,-h/2,w,h,r*0.4);ctx.fill();
+    ctx.shadowBlur=0;ctx.fillStyle='#fff';
+    ctx.beginPath();ctx.moveTo(-r*0.2,-r*0.35);ctx.lineTo(r*0.4,0);ctx.lineTo(-r*0.2,r*0.35);ctx.closePath();ctx.fill();
+  }else if(k===6){
+    ctx.shadowBlur=r*0.6;
+    ctx.lineWidth=r*0.28;ctx.lineCap='round';
+    ctx.strokeStyle='#ff2d6f';ctx.beginPath();ctx.arc(r*0.12,r*0.12,r*0.55,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle=c;ctx.beginPath();ctx.arc(-r*0.1,-r*0.1,r*0.55,0,Math.PI*2);ctx.stroke();
+  }else if(k===5){
+    ctx.strokeStyle=c;ctx.lineWidth=r*0.18;
+    ctx.beginPath();ctx.roundRect(-r*0.85,-r*0.85,r*1.7,r*1.7,r*0.5);ctx.stroke();
+    ctx.beginPath();ctx.arc(0,0,r*0.38,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle=c;ctx.beginPath();ctx.arc(r*0.5,-r*0.5,r*0.1,0,Math.PI*2);ctx.fill();
+  }else{
+    ctx.fillStyle=g;
+    ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;ctx.fillStyle='#fff';ctx.strokeStyle='#fff';
+    if(k===1){ctx.lineWidth=r*0.16;ctx.beginPath();ctx.arc(0,0,r*0.55,0.4,Math.PI*1.8);ctx.stroke();}
+    if(k===2){ctx.fillRect(-r*0.1,-r*0.4,r*0.22,r*0.9);ctx.fillRect(-r*0.35,-r*0.12,r*0.7,r*0.2);}
+    if(k===3){ctx.beginPath();ctx.arc(-r*0.3,-r*0.05,r*0.16,0,7);ctx.arc(r*0.3,-r*0.05,r*0.16,0,7);ctx.fill();}
+    if(k===4){ctx.fillRect(-r*0.3,-r*0.4,r*0.18,r*0.4);ctx.fillRect(r*0.12,-r*0.4,r*0.18,r*0.4);}
+  }
+  ctx.restore();
+}
+
+function ring(){
+  const a=t*0.8;
+  let st;
+  try{
+    st=ctx.createConicGradient(a,CX,CY);
+    for(let i=0;i<=6;i++)st.addColorStop(i/6,'hsl('+(i*60)+',100%,60%)');
+  }catch(e){st='#fff';}
+  const gap=Math.asin(HW/R);
+  ctx.strokeStyle=st;ctx.lineWidth=3;ctx.shadowColor='#fff';ctx.shadowBlur=6;
+  ctx.beginPath();ctx.arc(CX,CY,R+1.5,-Math.PI/2+gap,-Math.PI/2-gap+Math.PI*2);ctx.stroke();
+  ctx.shadowBlur=0;
+  ctx.strokeStyle='#fff';ctx.lineWidth=2.5;
+  ctx.beginPath();
+  ctx.moveTo(CX-HW-1,TOP-8);ctx.lineTo(CX-HW-1,OPEN_Y+1);
+  ctx.moveTo(CX+HW+1,TOP-8);ctx.lineTo(CX+HW+1,OPEN_Y+1);
+  ctx.stroke();
+}
+
+function draw(px){
+  const k=px||dpr*scale;
+  ctx.setTransform(k,0,0,k,0,0);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,LW,LH);
+  if(boxImg){
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    ctx.drawImage(boxImg,IMG_X,IMG_Y,boxImg.width*IMG_S,boxImg.height*IMG_S);
+  }else ring();
+  for(const p of pulses){
+    const k=p.t/0.8;
+    ctx.strokeStyle=p.c;ctx.globalAlpha=1-k;ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r+k*p.r*1.4,0,Math.PI*2);ctx.stroke();
+    ctx.globalAlpha=(1-k)*0.5;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r*0.6+k*p.r*0.9,0,Math.PI*2);ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  for(const b of balls)glyph(b);
+  if(boxImg)ctx.drawImage(boxImg,400,0,223,338,IMG_X+400*IMG_S,IMG_Y,223*IMG_S,338*IMG_S);
+  ctx.textAlign='center';ctx.fillStyle='#fff';
+  ctx.font='600 15px "Arial Narrow","Trebuchet MS",system-ui,sans-serif';
+  ctx.fillText(won?'Final form reached!':'Guess the LAST one',CX,370);
+}
+
+const panel=document.getElementById('panel'),gear=document.getElementById('gear');
+const ballsBox=document.getElementById('balls'),eqsBox=document.getElementById('eqs');
+const txt=document.getElementById('txt'),chainBox=document.getElementById('chain');
+
+function el(tag,props,kids){
+  const e=document.createElement(tag);
+  Object.assign(e,props||{});
+  (kids||[]).forEach(function(k){e.append(k);});
+  return e;
+}
+function nm(i){return types[i].name;}
+function eqText(){
+  return recipes.map(function(q){return nm(q.a)+' + '+nm(q.b)+' = '+(q.c<0?'none':nm(q.c));}).join('\n');
+}
+function sync(){save();txt.value=eqText();}
+function findType(s){
+  s=s.trim().toLowerCase();
+  let i=types.findIndex(function(x){return x.name.toLowerCase()===s;});
+  if(i<0&&/^\d+$/.test(s)&&+s>=1&&+s<=types.length)i=+s-1;
+  return i;
+}
+function applyText(){
+  const out=[];
+  txt.value.split('\n').forEach(function(line){
+    const m=line.split('=');
+    if(m.length!==2)return;
+    const p=m[0].split('+');
+    if(p.length!==2)return;
+    const a=findType(p[0]),b=findType(p[1]),r=m[1].trim().toLowerCase();
+    const c=r==='none'?-1:findType(r);
+    if(a>=0&&b>=0&&(c>=0||r==='none'))out.push({a:a,b:b,c:c});
+  });
+  recipes=out;
+  renderEqs();sync();
+}
+function thumbStyle(th,x){
+  th.style.background=x.src?'url("'+x.src+'") center/cover':x.color;
+  th.style.borderColor=x.color;
+}
+function readImage(file,cb){
+  const fr=new FileReader();
+  fr.onload=function(){
+    const im=new Image();
+    im.onload=function(){
+      const s=128,c=document.createElement('canvas');
+      c.width=c.height=s;
+      const m=Math.min(im.width,im.height);
+      c.getContext('2d').drawImage(im,(im.width-m)/2,(im.height-m)/2,m,m,0,0,s,s);
+      cb(c.toDataURL('image/png'));
+    };
+    im.src=fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+function select(value,withNone,onchange){
+  const s=el('select');
+  if(withNone)s.append(new Option('none',-1));
+  types.forEach(function(x,i){s.append(new Option(x.name,i));});
+  s.value=value;
+  s.onchange=function(){onchange(+s.value);};
+  return s;
+}
+function renderBalls(){
+  ballsBox.textContent='';
+  types.forEach(function(x,i){
+    const th=el('div',{className:'thumb'});
+    thumbStyle(th,x);
+    const name=el('input',{value:x.name,className:'nm',ariaLabel:'Ball name'});
+    name.oninput=function(){x.name=name.value;renderEqs();sync();};
+    const del=el('button',{textContent:'Remove',disabled:types.length<=2});
+    del.onclick=function(){removeType(i);};
+    const col=el('input',{type:'color',value:x.color,title:'Colour'});
+    col.oninput=function(){x.color=col.value;thumbStyle(th,x);save();};
+    const rad=el('input',{type:'number',value:x.r,min:3,max:90,step:1,className:'num',title:'Radius'});
+    rad.oninput=function(){const v=+rad.value;if(v>=3&&v<=90){x.r=v;save();}};
+    const sp=el('input',{type:'checkbox',checked:x.spawn});
+    sp.onchange=function(){x.spawn=sp.checked;save();};
+    const file=el('input',{type:'file',accept:'image/*',hidden:true});
+    file.onchange=function(){
+      if(!file.files[0])return;
+      readImage(file.files[0],function(data){setImage(x,data);thumbStyle(th,x);save();});
+    };
+    const up=el('button',{textContent:'Image'});
+    up.onclick=function(){file.click();};
+    const clr=el('button',{textContent:'Clear'});
+    clr.onclick=function(){setImage(x,null);thumbStyle(th,x);save();};
+    const sfile=el('input',{type:'file',accept:'.mp3,.wav,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/ogg',hidden:true});
+    const sname=el('span',{className:'snm',textContent:x.snd?x.snd.name:'default sound',title:'Played when a merge creates this ball'});
+    const sup=el('button',{textContent:'Sound',title:'Sound played when a merge creates this ball'});
+    sup.onclick=function(){sfile.click();};
+    const sply=el('button',{textContent:'\u25b6',title:'Preview',ariaLabel:'Preview this ball merge sound'});
+    sply.onclick=function(){if(window.MergeAudio)MergeAudio.preview(x.snd&&x.snd.buf);};
+    const sclr=el('button',{textContent:'Reset',title:'Back to the default sound',disabled:!x.snd});
+    sclr.onclick=function(){clearBallSound(x);renderBalls();};
+    sfile.onchange=function(){
+      const f=sfile.files[0];sfile.value='';
+      if(!f)return;
+      setBallSound(x,f).then(function(){renderBalls();},function(e){sname.textContent=e&&e.message?e.message:'Could not load sound';});
+    };
+    ballsBox.append(el('div',{className:'row'},[
+      el('div',{className:'line'},[th,name,del]),
+      el('div',{className:'line'},[col,rad,el('label',{},[sp,'Spawns']),up,clr,file]),
+      el('div',{className:'line'},[el('span',{textContent:'Merge sound:'}),sname,sup,sply,sclr,sfile])
+    ]));
+  });
+}
+function renderEqs(){
+  eqsBox.textContent='';
+  recipes.forEach(function(q,i){
+    const del=el('button',{textContent:'×',ariaLabel:'Remove equation'});
+    del.onclick=function(){recipes.splice(i,1);renderEqs();sync();};
+    eqsBox.append(el('div',{className:'eq'},[
+      select(q.a,false,function(v){q.a=v;sync();}),'+',
+      select(q.b,false,function(v){q.b=v;sync();}),'=',
+      select(q.c,true,function(v){q.c=v;sync();}),
+      del
+    ]));
+  });
+  txt.value=eqText();
+}
+function removeType(i){
+  if(types.length<=2)return;
+  if(types[i].snd&&window.MergeAudio)MergeAudio.soundStore.del(types[i].snd.key);
+  types.splice(i,1);
+  balls=balls.filter(function(b){return b.tier!==i;});
+  balls.forEach(function(b){if(b.tier>i)b.tier--;});
+  const f=function(v){return v>i?v-1:v;};
+  recipes=recipes.filter(function(q){return q.a!==i&&q.b!==i&&q.c!==i;}).map(function(q){return{a:f(q.a),b:f(q.b),c:f(q.c)};});
+  pend=[];won=0;
+  renderBalls();renderEqs();save();
+}
+function addType(){
+  const hue=Math.floor(Math.random()*360);
+  types.push({name:'Ball '+(types.length+1),r:20,color:'hsl('+hue+',90%,60%)',gl:-1,spawn:false,src:null,img:null,snd:null});
+  const probe=document.createElement('canvas').getContext('2d');
+  probe.fillStyle=types[types.length-1].color;
+  types[types.length-1].color=probe.fillStyle;
+  won=0;
+  renderBalls();renderEqs();save();
+}
+
+const rateIn=document.getElementById('dropRate'),rateOut=document.getElementById('dropRateVal');
+const spdIn=document.getElementById('dropSpeed'),spdOut=document.getElementById('dropSpeedVal');
+function renderDrop(){
+  rateIn.value=dropRate;spdIn.value=dropSpeed;
+  rateOut.textContent=dropRate.toFixed(2)+'/s';spdOut.textContent=dropSpeed.toFixed(2)+'\u00d7';
+}
+rateIn.oninput=function(){
+  dropRate=Math.min(5,Math.max(0.2,+rateIn.value));
+  spawnT=Math.min(spawnT,1/dropRate);
+  rateOut.textContent=dropRate.toFixed(2)+'/s';save();
+};
+spdIn.oninput=function(){
+  dropSpeed=Math.min(3,Math.max(0.25,+spdIn.value));
+  spdOut.textContent=dropSpeed.toFixed(2)+'\u00d7';save();
+};
+gear.onclick=function(){panel.classList.toggle('open');};
+chainBox.onchange=function(){chain=chainBox.checked;save();};
+document.getElementById('addType').onclick=addType;
+document.getElementById('addEq').onclick=function(){
+  recipes.push({a:0,b:0,c:Math.min(1,types.length-1)});
+  renderEqs();sync();
+};
+document.getElementById('applyTxt').onclick=applyText;
+document.getElementById('restart').onclick=reset;
+document.getElementById('defaults').onclick=function(){
+  try{localStorage.removeItem(KEY);}catch(e){}
+  try{if(window.MergeAudio)MergeAudio.soundStore.clearBalls();}catch(e){}
+  init();reset();
+  chainBox.checked=chain;
+  renderBalls();renderEqs();renderDrop();
+};
+
+init();
+chainBox.checked=chain;
+renderBalls();renderEqs();renderDrop();
+
+let last=performance.now();
+function frame(now){
+  const dt=Math.min((now-last)/1000,0.033);last=now;
+  update(dt);draw();
+  if(recCtx){const sv=ctx;ctx=recCtx;try{draw(recW/LW);}catch(e){}ctx=sv;}
+  requestAnimationFrame(frame);
+}
+cv.addEventListener('pointerdown',reset);
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

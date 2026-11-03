@@ -1,0 +1,17 @@
+# Render Blueprint: deploys this folder as a free static site.
+services:
+  - type: web
+    name: merge-ball
+    runtime: static
+    buildCommand: echo "static site - no build step"
+    staticPublishPath: .
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=86400
